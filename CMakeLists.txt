@@ -1,18 +1,19 @@
-cmake_minimum_required(VERSION 2.6)
- 
-set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake_modules")
+cmake_minimum_required(VERSION 2.8)
  
 project(OPENGLEXAMPLES)
  
 find_package(OpenGL REQUIRED)
-#~ find_package(GLFW REQUIRED)
-#find_package(GLEW REQUIRED)
-set(GLWT_ROOT "")
-set(GLXW_LIBRARY "-lglxw -lglxw_glx") 
-set(GLWT_LIBRARY "-lglwt") 
 
-set(CMAKE_CXX_FLAGS "-O2 -Wall -Wextra -L/home/japro/Programming/glxw/glwt/build/ext/glxw -I/home/japro//Programming/glxw/glwt/build/ext/glxw/include -L/home/japro/Programming/glxw/glwt/build/src -I/home/japro//Programming/glxw/glwt/include")
-SET(LIBRARIES ${GLWT_LIBRARY} ${GLXW_LIBRARY} ${OPENGL_LIBRARY})
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/glwt)
+
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/glwt/include)
+include_directories(${CMAKE_CURRENT_BINARY_DIR}/glwt/ext/glxw/include)
+
+link_directories(${CMAKE_CURRENT_BINARY_DIR}/glwt/src)
+link_directories(${CMAKE_CURRENT_BINARY_DIR}/glwt/ext/glxw)
+
+set(CMAKE_CXX_FLAGS "-O2 -Wall -Wextra")
+SET(LIBRARIES glwt glxw ${GLWT_LIBRARIES} ${GLXW_LIBRARIES} ${OPENGL_LIBRARY})
 
 link_directories (${OPENGLEXAMPLES_BINARY_DIR}/bin)
 

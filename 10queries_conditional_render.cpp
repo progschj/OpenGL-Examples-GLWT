@@ -101,7 +101,7 @@ static void key_callback(GLWTWindow *window, int down, int keysym, int scancode,
 
 static void motion_callback(GLWTWindow *window, int x, int y, int buttons, void *void_userdata)
 {
-    (void)window;
+    (void)window; (void)buttons;
     UserData *userdata = (UserData*)void_userdata;
     userdata->mouse.x = x;
     userdata->mouse.y = y;
