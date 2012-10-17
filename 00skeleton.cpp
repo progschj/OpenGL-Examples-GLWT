@@ -5,74 +5,104 @@
  * Autor: Jakob Progsch
  */
  
-/* index
- * line   34: glfw initialization
- * line   56: glew initialization    
- * line   68: main loop    
- * line   92: cleanup
- */
-
-#include <GL3/gl3w.h>
-#include <GL/glfw.h>
+#include <GLXW/glxw.h>
+#include <GLWT/glwt.h>
 
 #include <iostream>
 
-bool running;
+struct UserData {
+    bool running;
+};
 
-// window close callback function
-int closedWindow()
+static void error_callback(const char *msg, void *userdata)
 {
-    running = false;
-    return GL_TRUE;
+    std::cerr << msg << std::endl;
+    ((UserData*)userdata)->running = false;
+}
+
+static void close_callback(GLWTWindow *window, void *userdata)
+{
+    (void)window;
+    ((UserData*)userdata)->running = false;
+}
+
+static void key_callback(GLWTWindow *window, int down, int keysym, int scancode, int mod, void *userdata)
+{
+    (void)window; (void)down; (void)scancode; (void)mod;
+    if(keysym == GLWT_KEY_ESCAPE)
+        ((UserData*)userdata)->running = false;
 }
 
 int main()
 {
     int width = 640;
     int height = 480;
+   
+    UserData userdata;
+    userdata.running = true;
     
-    if(glfwInit() == GL_FALSE)
+    GLWTConfig glwt_config;
+    glwt_config.red_bits = 8;
+    glwt_config.green_bits = 8;
+    glwt_config.blue_bits = 8;
+    glwt_config.alpha_bits = 8;
+    glwt_config.depth_bits = 24;
+    glwt_config.stencil_bits = 8;
+    glwt_config.samples = 0;
+    glwt_config.sample_buffers = 0;
+    glwt_config.api = GLWT_API_OPENGL | GLWT_PROFILE_CORE;
+    glwt_config.api_version_major = 3;
+    glwt_config.api_version_minor = 3;
+    
+    GLWTAppCallbacks app_callbacks;
+    app_callbacks.error_callback = error_callback;
+    app_callbacks.userdata = &userdata;
+    
+    if(glwtInit(&glwt_config, &app_callbacks) != 0)
     {
-        std::cerr << "failed to init GLFW" << std::endl;
+        std::cerr << "failed to init GLWT" << std::endl;
         return 1;
     }
-
-    // sadly glew doesn't play nice with core profiles... 
-    glfwOpenWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwOpenWindowHint(GLFW_OPENGL_VERSION_MAJOR, 3);
-    glfwOpenWindowHint(GLFW_OPENGL_VERSION_MINOR, 3);
  
+    GLWTWindowCallbacks win_callbacks;
+    win_callbacks.close_callback = close_callback;
+    win_callbacks.expose_callback = 0;
+    win_callbacks.resize_callback = 0;
+    win_callbacks.show_callback = 0;
+    win_callbacks.focus_callback = 0;
+    win_callbacks.key_callback = key_callback,
+    win_callbacks.motion_callback = 0;
+    win_callbacks.button_callback = 0;
+    win_callbacks.mouseover_callback = 0;
+    win_callbacks.userdata = &userdata;
+    
     // create a window
-    if(glfwOpenWindow(width, height, 0, 0, 0, 8, 24, 8, GLFW_WINDOW) == GL_FALSE)
+    GLWTWindow *window = glwtWindowCreate("", width, height, &win_callbacks, 0);
+    if(window == 0)
     {
         std::cerr << "failed to open window" << std::endl;
-        glfwTerminate();
+        glwtQuit();
         return 1;
     }
     
-    // setup windows close callback
-    glfwSetWindowCloseCallback(closedWindow);
-
-    
-    
-    if (gl3wInit())
+    if (glxwInit())
     {
-        std::cerr << "failed to init GL3W" << std::endl;
-        glfwCloseWindow();
-        glfwTerminate();
+        std::cerr << "failed to init GLXW" << std::endl;
+        glwtWindowDestroy(window);
+        glwtQuit();
         return 1;
     }
+    
+    glwtWindowShow(window, 1);
+    glwtMakeCurrent(window);
+    glwtSwapInterval(window, 1);
     
     // creation and initialization of stuff goes here
 
-    running = true;
-    while(running)
-    {    
-        // terminate on excape 
-        if(glfwGetKey(GLFW_KEY_ESC))
-        {
-            running = false;
-        }
+    while(userdata.running)
+    {   
+        // update events 
+        glwtEventHandle(0);
         
         // drawing etc goes here
         // ...
@@ -81,17 +111,16 @@ int main()
         GLenum error = glGetError();
         if(error != GL_NO_ERROR)
         {
-            std::cerr << gluErrorString(error);
-            running = false;       
+            userdata.running = false;       
         }
         
         // finally swap buffers
-        glfwSwapBuffers();       
+        glwtSwapBuffers(window);       
     }
 
 
-    glfwCloseWindow();
-    glfwTerminate();
+    glwtWindowDestroy(window);
+    glwtQuit();
     return 0;
 }
 

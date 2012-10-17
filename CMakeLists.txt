@@ -5,12 +5,14 @@ set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake_modules")
 project(OPENGLEXAMPLES)
  
 find_package(OpenGL REQUIRED)
-find_package(GLFW REQUIRED)
+#~ find_package(GLFW REQUIRED)
 #find_package(GLEW REQUIRED)
-set(GL3W_LIBRARY "-lgl3w") 
+set(GLWT_ROOT "")
+set(GLXW_LIBRARY "-lglxw -lglxw_glx") 
+set(GLWT_LIBRARY "-lglwt") 
 
-set(CMAKE_CXX_FLAGS "-O2 -Wall -Wextra")
-SET(LIBRARIES ${GLFW_LIBRARY} ${GL3W_LIBRARY} ${OPENGL_LIBRARY})
+set(CMAKE_CXX_FLAGS "-O2 -Wall -Wextra -L/home/japro/Programming/glxw/glwt/build/ext/glxw -I/home/japro//Programming/glxw/glwt/build/ext/glxw/include -L/home/japro/Programming/glxw/glwt/build/src -I/home/japro//Programming/glxw/glwt/include")
+SET(LIBRARIES ${GLWT_LIBRARY} ${GLXW_LIBRARY} ${OPENGL_LIBRARY})
 
 link_directories (${OPENGLEXAMPLES_BINARY_DIR}/bin)
 

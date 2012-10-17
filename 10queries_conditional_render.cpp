@@ -11,21 +11,8 @@
  * Autor: Jakob Progsch
  */
 
-/* index
- * line  153: chunk draw shader
- * line  219: occlusion query shader
- * line  273: chunk generation
- * line  494: timer query setup
- * line  523: input handling        
- * line  594: beginning of drawing
- * line  606: start timer query        
- * line  612: occlusion queries
- * line  643: actual rendering            
- * line  674: end timer query and handle results
- */
-
-#include <GL3/gl3w.h>
-#include <GL/glfw.h>
+#include <GLXW/glxw.h>
+#include <GLWT/glwt.h>
 
 //glm is used to create perspective and transform matrices
 #include <glm/glm.hpp>
@@ -37,6 +24,88 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+
+#include <time.h>
+unsigned long long raw_time()
+{
+   struct timespec t;
+   clock_gettime(CLOCK_MONOTONIC, &t);
+   return (unsigned long long)t.tv_sec * (unsigned long long)1000000000 + (unsigned long long)t.tv_nsec;
+}
+unsigned long long glwtGetNanoTime()
+{
+   static unsigned long long base = 0;
+   if(base == 0)
+      base = raw_time();
+   return raw_time() - base;
+}
+
+struct UserData {
+    bool running;
+    bool occlusion_cull;
+    struct {
+        float up;
+        float right;
+        float forward;
+        float roll;
+    } move;
+    struct {
+        int x, y;
+    } mouse;
+};
+
+static void error_callback(const char *msg, void *userdata)
+{
+    std::cerr << msg << std::endl;
+    ((UserData*)userdata)->running = false;
+}
+
+static void close_callback(GLWTWindow *window, void *userdata)
+{
+    (void)window;
+    ((UserData*)userdata)->running = false;
+}
+
+static void key_callback(GLWTWindow *window, int down, int keysym, int scancode, int mod, void *void_userdata)
+{
+    (void)window; (void)scancode; (void)mod;
+    UserData *userdata = (UserData*)void_userdata;
+    if(keysym == GLWT_KEY_ESCAPE)
+        userdata->running = false;
+    
+    if(keysym == GLWT_KEY_SPACE && down)
+        userdata->occlusion_cull = !userdata->occlusion_cull;
+                
+    switch(keysym)
+    {
+        case GLWT_KEY_W:
+            userdata->move.forward = down;
+            break;
+        case GLWT_KEY_S:
+            userdata->move.forward = -down;
+            break;
+        case GLWT_KEY_D:
+            userdata->move.right = down;
+            break;
+        case GLWT_KEY_A:
+            userdata->move.right = -down;
+            break;
+        case GLWT_KEY_Q:
+            userdata->move.roll = down;
+            break;
+        case GLWT_KEY_E:
+            userdata->move.roll = -down;
+            break;
+    }
+}
+
+static void motion_callback(GLWTWindow *window, int x, int y, int buttons, void *void_userdata)
+{
+    (void)window;
+    UserData *userdata = (UserData*)void_userdata;
+    userdata->mouse.x = x;
+    userdata->mouse.y = y;
+}
 
 // chunk data structure that contains the information required to
 // render and cull the chunks
@@ -64,15 +133,6 @@ private:
 float world_function(glm::vec3 pos)
 {
     return glm::perlin(0.1f*(pos+glm::vec3(100,100,100)));
-}
-
-bool running;
-
-// window close callback function
-int closedWindow()
-{
-    running = false;
-    return GL_TRUE;
 }
 
 // helper to check and display for shader compiler errors
@@ -113,42 +173,65 @@ int main()
 {
     int width = 640;
     int height = 480;
+   
+    UserData userdata;
+    userdata.running = true;
     
-    if(glfwInit() == GL_FALSE)
+    GLWTConfig glwt_config;
+    glwt_config.red_bits = 8;
+    glwt_config.green_bits = 8;
+    glwt_config.blue_bits = 8;
+    glwt_config.alpha_bits = 8;
+    glwt_config.depth_bits = 24;
+    glwt_config.stencil_bits = 8;
+    glwt_config.samples = 0;
+    glwt_config.sample_buffers = 0;
+    glwt_config.api = GLWT_API_OPENGL | GLWT_PROFILE_CORE;
+    glwt_config.api_version_major = 3;
+    glwt_config.api_version_minor = 3;
+    
+    GLWTAppCallbacks app_callbacks;
+    app_callbacks.error_callback = error_callback;
+    app_callbacks.userdata = &userdata;
+    
+    if(glwtInit(&glwt_config, &app_callbacks) != 0)
     {
-        std::cerr << "failed to init GLFW" << std::endl;
+        std::cerr << "failed to init GLWT" << std::endl;
         return 1;
     }
-
-    // sadly glew doesn't play nice with core profiles... 
-    glfwOpenWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwOpenWindowHint(GLFW_OPENGL_VERSION_MAJOR, 3);
-    glfwOpenWindowHint(GLFW_OPENGL_VERSION_MINOR, 3);
  
+    GLWTWindowCallbacks win_callbacks;
+    win_callbacks.close_callback = close_callback;
+    win_callbacks.expose_callback = 0;
+    win_callbacks.resize_callback = 0;
+    win_callbacks.show_callback = 0;
+    win_callbacks.focus_callback = 0;
+    win_callbacks.key_callback = key_callback,
+    win_callbacks.motion_callback = motion_callback;
+    win_callbacks.button_callback = 0;
+    win_callbacks.mouseover_callback = 0;
+    win_callbacks.userdata = &userdata;
+    
     // create a window
-    if(glfwOpenWindow(width, height, 0, 0, 0, 8, 24, 8, GLFW_WINDOW) == GL_FALSE)
+    GLWTWindow *window = glwtWindowCreate("", width, height, &win_callbacks, 0);
+    if(window == 0)
     {
         std::cerr << "failed to open window" << std::endl;
-        glfwTerminate();
+        glwtQuit();
         return 1;
     }
     
-    // setup windows close callback
-    glfwSetWindowCloseCallback(closedWindow);
-    
-    // this time we disable the mouse cursor since we want differential
-    // mouse input
-    glfwDisable(GLFW_MOUSE_CURSOR);
-    
-    
-    
-    if (gl3wInit())
+    if (glxwInit())
     {
-        std::cerr << "failed to init GL3W" << std::endl;
-        glfwCloseWindow();
-        glfwTerminate();
+        std::cerr << "failed to init GLXW" << std::endl;
+        glwtWindowDestroy(window);
+        glwtQuit();
         return 1;
     }
+    
+    glwtWindowShow(window, 1);
+    glwtMakeCurrent(window);
+    glwtSwapInterval(window, 1);
 
     // draw shader
     std::string vertex_source =
@@ -505,24 +588,30 @@ int main()
     glm::vec3 position;
     glm::mat4 rotation = glm::mat4(1.0f);
     
-    running = true;
-    float t = glfwGetTime();
-    bool occlusion_cull = true;
-    bool space_down = false;
+    float t = glwtGetNanoTime()*1.e-9f;
+    userdata.occlusion_cull = true;
+    userdata.move.forward = 0;
+    userdata.move.right = 0;
+    userdata.move.up = 0;
+    userdata.move.roll = 0;
+    userdata.mouse.x = 0;
+    userdata.mouse.y = 0;
     
-    // mouse position
-    int mousex, mousey;
-    glfwGetMousePos(&mousex, &mousey);
-    while(running)
+    int mousex = userdata.mouse.x;
+    int mousey = userdata.mouse.y;
+    while(userdata.running)
     {   
         // calculate timestep
-        float new_t = glfwGetTime();
+        float new_t = glwtGetNanoTime()*1.e-9f;
         float dt = new_t - t;
         t = new_t;
 
+        // update events
+        glwtEventHandle(0);
+
         // update mouse differential
-        int tmpx, tmpy;
-        glfwGetMousePos(&tmpx, &tmpy);
+        int tmpx = userdata.mouse.x;
+        int tmpy = userdata.mouse.y;
         glm::vec2 mousediff(tmpx-mousex, tmpy-mousey);
         mousex = tmpx;
         mousey = tmpy;
@@ -538,45 +627,13 @@ int main()
         rotation = glm::rotate(rotation,  0.2f*mousediff.y, right);
         
         // roll
-        if(glfwGetKey('Q'))
-        {
-            rotation = glm::rotate(rotation, 180.0f*dt, forward); 
-        }  
-        if(glfwGetKey('E'))
-        {
-            rotation = glm::rotate(rotation,-180.0f*dt, forward); 
-        }
+        rotation = glm::rotate(rotation, 180.0f*dt*userdata.move.roll, forward); 
+ 
         
         // movement
-        if(glfwGetKey('W'))
-        {
-            position += 10.0f*dt*forward; 
-        }  
-        if(glfwGetKey('S'))
-        {
-            position -= 10.0f*dt*forward;
-        }
-        if(glfwGetKey('D'))
-        {
-            position += 10.0f*dt*right; 
-        }  
-        if(glfwGetKey('A'))
-        {
-            position -= 10.0f*dt*right;
-        }
-        
-        // toggle occlusion culling
-        if(glfwGetKey(GLFW_KEY_SPACE) && !space_down)
-        {
-            occlusion_cull = !occlusion_cull;
-        }
-        space_down = glfwGetKey(GLFW_KEY_SPACE);
-        
-        // terminate on escape 
-        if(glfwGetKey(GLFW_KEY_ESC))
-        {
-            running = false;
-        }
+        position += 10.0f*dt*forward*userdata.move.forward;
+        position += 10.0f*dt*right*userdata.move.right;
+        position += 10.0f*dt*up*userdata.move.up;
         
         
         // calculate ViewProjection matrix
@@ -610,7 +667,7 @@ int main()
         while(i!=chunks.size())
         {
             size_t j = i;
-            if(occlusion_cull)
+            if(userdata.occlusion_cull)
             {
                 // start occlusion queries and render for the current slice
                 glDisable(GL_CULL_FACE);
@@ -656,7 +713,7 @@ int main()
                     continue;
                 
                 // begin conditional render
-                if(occlusion_cull)
+                if(userdata.occlusion_cull)
                     glBeginConditionalRender(chunks[j].query, GL_QUERY_BY_REGION_WAIT);
                 
                 // draw chunk
@@ -664,7 +721,7 @@ int main()
                 glDrawElements(GL_TRIANGLES, 6*chunks[j].quadcount, GL_UNSIGNED_INT, 0);
                 
                 // end conditional render
-                if(occlusion_cull)
+                if(userdata.occlusion_cull)
                     glEndConditionalRender();
             }
             i = j;
@@ -688,12 +745,11 @@ int main()
         GLenum error = glGetError();
         if(error != GL_NO_ERROR)
         {
-            std::cerr << gluErrorString(error);
-            running = false;       
+            userdata.running = false;       
         }
         
         // finally swap buffers
-        glfwSwapBuffers();       
+        glwtSwapBuffers(window);       
     }
     
     // delete the created objects
@@ -723,8 +779,8 @@ int main()
     glDeleteShader(query_fragment_shader);
     glDeleteProgram(query_shader_program);
     
-    glfwCloseWindow();
-    glfwTerminate();
+    glwtWindowDestroy(window);
+    glwtQuit();
     return 0;
 }
 

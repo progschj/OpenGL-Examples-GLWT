@@ -7,15 +7,8 @@
  * Autor: Jakob Progsch
  */
 
-/* index
- * line  213: transform feedback shader source code
- * line  291: initialize particles            
- * line  371: transform feedback physics update        
- * line  420: draw call       
- */
-
-#include <GL3/gl3w.h>
-#include <GL/glfw.h>
+#include <GLXW/glxw.h>
+#include <GLWT/glwt.h>
 
 //glm is used to create perspective and transform matrices
 #include <glm/glm.hpp>
@@ -28,13 +21,42 @@
 #include <cstdlib>
 #include <cmath>
 
-bool running;
-
-// window close callback function
-int closedWindow()
+#include <time.h>
+unsigned long long raw_time()
 {
-    running = false;
-    return GL_TRUE;
+   struct timespec t;
+   clock_gettime(CLOCK_MONOTONIC, &t);
+   return (unsigned long long)t.tv_sec * (unsigned long long)1000000000 + (unsigned long long)t.tv_nsec;
+}
+unsigned long long glwtGetNanoTime()
+{
+   static unsigned long long base = 0;
+   if(base == 0)
+      base = raw_time();
+   return raw_time() - base;
+}
+
+struct UserData {
+    bool running;
+};
+
+static void error_callback(const char *msg, void *userdata)
+{
+    std::cerr << msg << std::endl;
+    ((UserData*)userdata)->running = false;
+}
+
+static void close_callback(GLWTWindow *window, void *userdata)
+{
+    (void)window;
+    ((UserData*)userdata)->running = false;
+}
+
+static void key_callback(GLWTWindow *window, int down, int keysym, int scancode, int mod, void *userdata)
+{
+    (void)window; (void)down; (void)scancode; (void)mod;
+    if(keysym == GLWT_KEY_ESCAPE)
+        ((UserData*)userdata)->running = false;
 }
 
 // helper to check and display for shader compiler errors
@@ -75,38 +97,65 @@ int main()
 {
     int width = 640;
     int height = 480;
+   
+    UserData userdata;
+    userdata.running = true;
     
-    if(glfwInit() == GL_FALSE)
+    GLWTConfig glwt_config;
+    glwt_config.red_bits = 8;
+    glwt_config.green_bits = 8;
+    glwt_config.blue_bits = 8;
+    glwt_config.alpha_bits = 8;
+    glwt_config.depth_bits = 24;
+    glwt_config.stencil_bits = 8;
+    glwt_config.samples = 0;
+    glwt_config.sample_buffers = 0;
+    glwt_config.api = GLWT_API_OPENGL | GLWT_PROFILE_CORE;
+    glwt_config.api_version_major = 3;
+    glwt_config.api_version_minor = 3;
+    
+    GLWTAppCallbacks app_callbacks;
+    app_callbacks.error_callback = error_callback;
+    app_callbacks.userdata = &userdata;
+    
+    if(glwtInit(&glwt_config, &app_callbacks) != 0)
     {
-        std::cerr << "failed to init GLFW" << std::endl;
+        std::cerr << "failed to init GLWT" << std::endl;
         return 1;
     }
-
-    // sadly glew doesn't play nice with core profiles... 
-    glfwOpenWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwOpenWindowHint(GLFW_OPENGL_VERSION_MAJOR, 3);
-    glfwOpenWindowHint(GLFW_OPENGL_VERSION_MINOR, 3);
  
+    GLWTWindowCallbacks win_callbacks;
+    win_callbacks.close_callback = close_callback;
+    win_callbacks.expose_callback = 0;
+    win_callbacks.resize_callback = 0;
+    win_callbacks.show_callback = 0;
+    win_callbacks.focus_callback = 0;
+    win_callbacks.key_callback = key_callback,
+    win_callbacks.motion_callback = 0;
+    win_callbacks.button_callback = 0;
+    win_callbacks.mouseover_callback = 0;
+    win_callbacks.userdata = &userdata;
+    
     // create a window
-    if(glfwOpenWindow(width, height, 0, 0, 0, 8, 24, 8, GLFW_WINDOW) == GL_FALSE)
+    GLWTWindow *window = glwtWindowCreate("", width, height, &win_callbacks, 0);
+    if(window == 0)
     {
         std::cerr << "failed to open window" << std::endl;
-        glfwTerminate();
+        glwtQuit();
         return 1;
     }
     
-    // setup windows close callback
-    glfwSetWindowCloseCallback(closedWindow);
-    
-    
-    
-    if (gl3wInit())
+    if (glxwInit())
     {
-        std::cerr << "failed to init GL3W" << std::endl;
-        glfwCloseWindow();
-        glfwTerminate();
+        std::cerr << "failed to init GLXW" << std::endl;
+        glwtWindowDestroy(window);
+        glwtQuit();
         return 1;
     }
+    
+    glwtWindowShow(window, 1);
+    glwtMakeCurrent(window);
+    glwtSwapInterval(window, 1);
 
     // shader source code
     
@@ -355,17 +404,13 @@ int main()
     float bounce = 1.2f; // inelastic: 1.0f, elastic: 2.0f
 
     int current_buffer=0;
-    running = true;
-    while(running)
+    while(userdata.running)
     {   
         // get the time in seconds
-        float t = glfwGetTime();
+        float t = glwtGetNanoTime()*1.e-9f;
         
-        // terminate on excape 
-        if(glfwGetKey(GLFW_KEY_ESC))
-        {
-            running = false;
-        }
+        // update events
+        glwtEventHandle(0);
 
 
         // use the transform shader program
@@ -424,12 +469,11 @@ int main()
         GLenum error = glGetError();
         if(error != GL_NO_ERROR)
         {
-            std::cerr << gluErrorString(error);
-            running = false;       
+            userdata.running = false;       
         }
         
         // finally swap buffers
-        glfwSwapBuffers();
+        glwtSwapBuffers(window); 
         
         // advance buffer index
         current_buffer = (current_buffer + 1) % buffercount;       
@@ -440,20 +484,20 @@ int main()
     glDeleteVertexArrays(buffercount, vao);
     glDeleteBuffers(buffercount, vbo);
     
-    glDetachShader(shader_program, vertex_shader);	
-    glDetachShader(shader_program, geometry_shader);	
+    glDetachShader(shader_program, vertex_shader);  
+    glDetachShader(shader_program, geometry_shader);    
     glDetachShader(shader_program, fragment_shader);
     glDeleteShader(vertex_shader);
     glDeleteShader(geometry_shader);
     glDeleteShader(fragment_shader);
     glDeleteProgram(shader_program);
 
-    glDetachShader(transform_shader_program, transform_vertex_shader);	
+    glDetachShader(transform_shader_program, transform_vertex_shader);  
     glDeleteShader(transform_vertex_shader);
     glDeleteProgram(transform_shader_program);
     
-    glfwCloseWindow();
-    glfwTerminate();
+    glwtWindowDestroy(window);
+    glwtQuit();
     return 0;
 }
 

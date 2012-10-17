@@ -11,19 +11,8 @@
  * Autor: Jakob Progsch
  */
  
-/* index
- * line  122: vertex shader generates vertices from InstanceID/VertexID
- * line  139: tessellation control shader    
- * line  163: tessellation evaluation shader    
- * line  182: fragment shader with simple phong lighting        
- * line  202: shader compilation   
- * line  274: terrain generation
- * line  330: input handling        
- * line  415: draw call       
- */
-
-#include <GL3/gl3w.h>
-#include <GL/glfw.h>
+#include <GLXW/glxw.h>
+#include <GLWT/glwt.h>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -34,13 +23,86 @@
 #include <string>
 #include <vector>
 
-bool running;
-
-// window close callback function
-int closedWindow()
+#include <time.h>
+unsigned long long raw_time()
 {
-    running = false;
-    return GL_TRUE;
+   struct timespec t;
+   clock_gettime(CLOCK_MONOTONIC, &t);
+   return (unsigned long long)t.tv_sec * (unsigned long long)1000000000 + (unsigned long long)t.tv_nsec;
+}
+unsigned long long glwtGetNanoTime()
+{
+   static unsigned long long base = 0;
+   if(base == 0)
+      base = raw_time();
+   return raw_time() - base;
+}
+
+struct UserData {
+    bool running;
+    bool tesselation;
+    struct {
+        float up;
+        float right;
+        float forward;
+        float roll;
+    } move;
+    struct {
+        int x, y;
+    } mouse;
+};
+
+static void error_callback(const char *msg, void *userdata)
+{
+    std::cerr << msg << std::endl;
+    ((UserData*)userdata)->running = false;
+}
+
+static void close_callback(GLWTWindow *window, void *userdata)
+{
+    (void)window;
+    ((UserData*)userdata)->running = false;
+}
+
+static void key_callback(GLWTWindow *window, int down, int keysym, int scancode, int mod, void *void_userdata)
+{
+    (void)window; (void)scancode; (void)mod;
+    UserData *userdata = (UserData*)void_userdata;
+    if(keysym == GLWT_KEY_ESCAPE)
+        userdata->running = false;
+    
+    if(keysym == GLWT_KEY_SPACE && down)
+        userdata->tesselation = !userdata->tesselation;
+                
+    switch(keysym)
+    {
+        case GLWT_KEY_W:
+            userdata->move.forward = down;
+            break;
+        case GLWT_KEY_S:
+            userdata->move.forward = -down;
+            break;
+        case GLWT_KEY_D:
+            userdata->move.right = down;
+            break;
+        case GLWT_KEY_A:
+            userdata->move.right = -down;
+            break;
+        case GLWT_KEY_Q:
+            userdata->move.roll = down;
+            break;
+        case GLWT_KEY_E:
+            userdata->move.roll = -down;
+            break;
+    }
+}
+
+static void motion_callback(GLWTWindow *window, int x, int y, int buttons, void *void_userdata)
+{
+    (void)window;
+    UserData *userdata = (UserData*)void_userdata;
+    userdata->mouse.x = x;
+    userdata->mouse.y = y;
 }
 
 // helper to check and display for shader compiler errors
@@ -81,41 +143,65 @@ int main()
 {
     int width = 640;
     int height = 480;
+   
+    UserData userdata;
+    userdata.running = true;
     
-    if(glfwInit() == GL_FALSE)
+    GLWTConfig glwt_config;
+    glwt_config.red_bits = 8;
+    glwt_config.green_bits = 8;
+    glwt_config.blue_bits = 8;
+    glwt_config.alpha_bits = 8;
+    glwt_config.depth_bits = 24;
+    glwt_config.stencil_bits = 8;
+    glwt_config.samples = 0;
+    glwt_config.sample_buffers = 0;
+    glwt_config.api = GLWT_API_OPENGL | GLWT_PROFILE_CORE;
+    glwt_config.api_version_major = 4;
+    glwt_config.api_version_minor = 0;
+    
+    GLWTAppCallbacks app_callbacks;
+    app_callbacks.error_callback = error_callback;
+    app_callbacks.userdata = &userdata;
+    
+    if(glwtInit(&glwt_config, &app_callbacks) != 0)
     {
-        std::cerr << "failed to init GLFW" << std::endl;
+        std::cerr << "failed to init GLWT" << std::endl;
         return 1;
     }
-
-    // we need a 4.0 profile this time
-    glfwOpenWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwOpenWindowHint(GLFW_OPENGL_VERSION_MAJOR, 4);
-    glfwOpenWindowHint(GLFW_OPENGL_VERSION_MINOR, 0);
  
+    GLWTWindowCallbacks win_callbacks;
+    win_callbacks.close_callback = close_callback;
+    win_callbacks.expose_callback = 0;
+    win_callbacks.resize_callback = 0;
+    win_callbacks.show_callback = 0;
+    win_callbacks.focus_callback = 0;
+    win_callbacks.key_callback = key_callback,
+    win_callbacks.motion_callback = motion_callback;
+    win_callbacks.button_callback = 0;
+    win_callbacks.mouseover_callback = 0;
+    win_callbacks.userdata = &userdata;
+    
     // create a window
-    if(glfwOpenWindow(width, height, 0, 0, 0, 8, 24, 8, GLFW_WINDOW) == GL_FALSE)
+    GLWTWindow *window = glwtWindowCreate("", width, height, &win_callbacks, 0);
+    if(window == 0)
     {
         std::cerr << "failed to open window" << std::endl;
-        glfwTerminate();
+        glwtQuit();
         return 1;
     }
-    glfwSwapInterval(1);
     
-    // setup windows close callback
-    glfwSetWindowCloseCallback(closedWindow);
-    
-    // this time we disable the mouse cursor since we want differential
-    // mouse input
-    glfwDisable(GLFW_MOUSE_CURSOR);
-        
-    if (gl3wInit())
+    if (glxwInit())
     {
-        std::cerr << "failed to init GL3W" << std::endl;
-        glfwCloseWindow();
-        glfwTerminate();
+        std::cerr << "failed to init GLXW" << std::endl;
+        glwtWindowDestroy(window);
+        glwtQuit();
         return 1;
     }
+    
+    glwtWindowShow(window, 1);
+    glwtMakeCurrent(window);
+    glwtSwapInterval(window, 1);
 
 	GLuint vao;
 	glGenVertexArrays(1, &vao);
@@ -311,27 +397,34 @@ int main()
     glm::vec3 position;
     glm::mat4 rotation = glm::mat4(1.0f);
     
-    running = true;
-    float t = glfwGetTime();
-    bool tessellation = true;
-    bool space_down = false;
-    
-    // mouse position
-    int mousex, mousey;
-    glfwGetMousePos(&mousex, &mousey);
+
     
     glEnable(GL_DEPTH_TEST);
     
-    while(running)
-    {    
-           // calculate timestep
-        float new_t = glfwGetTime();
+    float t = glwtGetNanoTime()*1.e-9f;
+    userdata.tesselation = true;
+    userdata.move.forward = 0;
+    userdata.move.right = 0;
+    userdata.move.up = 0;
+    userdata.move.roll = 0;
+    userdata.mouse.x = 0;
+    userdata.mouse.y = 0;
+    
+    int mousex = userdata.mouse.x;
+    int mousey = userdata.mouse.y;
+    while(userdata.running)
+    {   
+        // calculate timestep
+        float new_t = glwtGetNanoTime()*1.e-9f;
         float dt = new_t - t;
         t = new_t;
 
+        // update events
+        glwtEventHandle(0);
+
         // update mouse differential
-        int tmpx, tmpy;
-        glfwGetMousePos(&tmpx, &tmpy);
+        int tmpx = userdata.mouse.x;
+        int tmpy = userdata.mouse.y;
         glm::vec2 mousediff(tmpx-mousex, tmpy-mousey);
         mousex = tmpx;
         mousey = tmpy;
@@ -347,46 +440,13 @@ int main()
         rotation = glm::rotate(rotation,  0.2f*mousediff.y, right);
         
         // roll
-        if(glfwGetKey('Q'))
-        {
-            rotation = glm::rotate(rotation, 180.0f*dt, forward); 
-        }  
-        if(glfwGetKey('E'))
-        {
-            rotation = glm::rotate(rotation,-180.0f*dt, forward); 
-        }
+        rotation = glm::rotate(rotation, 180.0f*dt*userdata.move.roll, forward); 
+ 
         
-        float speed = 0.1f;
         // movement
-        if(glfwGetKey('W'))
-        {
-            position += speed*dt*forward; 
-        }  
-        if(glfwGetKey('S'))
-        {
-            position -= speed*dt*forward;
-        }
-        if(glfwGetKey('D'))
-        {
-            position += speed*dt*right; 
-        }  
-        if(glfwGetKey('A'))
-        {
-            position -= speed*dt*right;
-        }
-        
-        // terminate on escape 
-        if(glfwGetKey(GLFW_KEY_ESC))
-        {
-            running = false;
-        }
-        
-        // toggle tesselation
-        if(glfwGetKey(GLFW_KEY_SPACE) && !space_down)
-        {
-            tessellation = !tessellation;
-        }
-        space_down = glfwGetKey(GLFW_KEY_SPACE);
+        position += 0.5f*dt*forward*userdata.move.forward;
+        position += 0.5f*dt*right*userdata.move.right;
+        position += 0.5f*dt*up*userdata.move.up;
         
         // calculate ViewProjection matrix
         glm::mat4 Projection = glm::perspective(60.0f, float(width) / height, 0.001f, 10.f);
@@ -406,7 +466,7 @@ int main()
         glUniformMatrix4fv(ViewProjection_Location, 1, GL_FALSE, glm::value_ptr(ViewProjection));
         glUniform3fv(ViewPosition_Location, 1, glm::value_ptr(position));
         
-        if(tessellation)
+        if(userdata.tesselation)
             glUniform1f(tess_scale_Location, 1.0f);
         else
             glUniform1f(tess_scale_Location, 0.0f);
@@ -421,12 +481,11 @@ int main()
         GLenum error = glGetError();
         if(error != GL_NO_ERROR)
         {
-            std::cerr << gluErrorString(error);
-            running = false;       
+            userdata.running = false;       
         }
         
         // finally swap buffers
-        glfwSwapBuffers();       
+        glwtSwapBuffers(window);       
     }
 
     // delete the created objects
@@ -442,8 +501,8 @@ int main()
     glDeleteShader(fragment_shader);
     glDeleteProgram(shader_program);
     
-    glfwCloseWindow();
-    glfwTerminate();
+    glwtWindowDestroy(window);
+    glwtQuit();
     return 0;
 }
 
