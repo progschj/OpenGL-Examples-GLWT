@@ -4,9 +4,13 @@ project(OPENGLEXAMPLES)
  
 find_package(OpenGL REQUIRED)
 
+find_path(ASDF asdfasdga.h REQUIRED)
+
+
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/glwt)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/glwt/include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/glm)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/glwt/ext/glxw/include)
 
 link_directories(${CMAKE_CURRENT_BINARY_DIR}/glwt/src)
